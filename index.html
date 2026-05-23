@@ -27,21 +27,33 @@
             font-size: 16px;
             box-sizing: border-box;
             resize: none;
+            margin-bottom: 10px;
         }
-        button {
+        .btn {
             width: 100%;
             padding: 15px;
-            background-color: #007aff;
-            color: white;
             border: none;
             border-radius: 8px;
             font-size: 18px;
             font-weight: bold;
-            margin: 15px 0;
+            margin: 5px 0 15px 0;
             cursor: pointer;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
-        button:active { background-color: #005bb5; }
+        .btn-primary {
+            background-color: #007aff;
+            color: white;
+        }
+        .btn-primary:active { background-color: #005bb5; }
+        
+        .btn-secondary {
+            background-color: #e5e5ea;
+            color: #333;
+            padding: 10px;
+            font-size: 16px;
+        }
+        .btn-secondary:active { background-color: #d1d1d6; }
+
         .output-box {
             background-color: #fff;
             padding: 15px;
@@ -51,17 +63,61 @@
             white-space: pre-wrap;
             font-family: monospace;
             font-size: 14px;
+            margin-bottom: 10px;
+        }
+        .summary-text {
+            text-align: center;
+            font-size: 16px;
+            font-weight: bold;
+            color: #d9534f; /* 使用紅色系讓重點醒目 */
+            margin-bottom: 15px;
         }
     </style>
 </head>
 <body>
 
     <h2>巨大花朵路線規劃</h2>
+    
+    <button onclick="pasteCoords()" class="btn btn-secondary">📋 貼上座標</button>
     <textarea id="inputCoords" placeholder="請貼上花朵座標 (一行一個)"></textarea>
-    <button onclick="calculateRoute()">產生最佳路徑</button>
+    
+    <button onclick="calculateRoute()" class="btn btn-primary">產生最佳路徑</button>
+    
     <div id="outputArea" class="output-box">結果將顯示於此...</div>
+    
+    <!-- 新增的摘要顯示區塊 -->
+    <div id="summaryArea" class="summary-text" style="display: none;"></div>
+    
+    <button id="copyBtn" onclick="copyResult()" class="btn btn-secondary" style="display: none;">📄 複製純座標結果</button>
 
     <script>
+        // 貼上剪貼簿內容的函數
+        async function pasteCoords() {
+            try {
+                const text = await navigator.clipboard.readText();
+                document.getElementById('inputCoords').value = text;
+            } catch (err) {
+                alert('瀏覽器阻擋了剪貼簿讀取，請手動長按輸入框並選擇「貼上」。');
+            }
+        }
+
+        // 複製輸出結果的函數
+        async function copyResult() {
+            const outputText = document.getElementById('outputArea').innerText;
+            if (!outputText || outputText === "結果將顯示於此..." || outputText === "請輸入有效的座標！") {
+                return;
+            }
+            try {
+                await navigator.clipboard.writeText(outputText);
+                const copyBtn = document.getElementById('copyBtn');
+                const originalText = copyBtn.innerText;
+                copyBtn.innerText = '✅ 已複製！';
+                setTimeout(() => { copyBtn.innerText = originalText; }, 2000);
+            } catch (err) {
+                alert('複製失敗，請手動長按文字全選複製。');
+            }
+        }
+
         // 計算兩點間距離 (Haversine formula，回傳公尺)
         function getDistance(lat1, lon1, lat2, lon2) {
             const R = 6371e3; 
@@ -98,6 +154,8 @@
 
             if(coords.length === 0) {
                 document.getElementById('outputArea').innerText = "請輸入有效的座標！";
+                document.getElementById('copyBtn').style.display = 'none';
+                document.getElementById('summaryArea').style.display = 'none';
                 return;
             }
 
@@ -129,14 +187,12 @@
             const endPt = { lat: sumLat / flowerCount, lng: sumLng / flowerCount };
             totalDistanceMeters += getDistance(route[route.length-1].lat, route[route.length-1].lng, endPt.lat, endPt.lng);
 
-            // 4. 計算起始位置 (距離第一朵花 55.5 公尺，反向延伸)
-            // 簡化處理：利用微小偏移量估算
+            // 4. 計算起始位置
             let startPt = { lat: route[0].lat, lng: route[0].lng };
             if(route.length > 1) {
                 const dLat = route[0].lat - route[1].lat;
                 const dLng = route[0].lng - route[1].lng;
                 const len = Math.sqrt(dLat*dLat + dLng*dLng);
-                // 1度緯度約 111 公里，55.5m 約等於 0.0005 度
                 if(len > 0) {
                     startPt.lat = route[0].lat + (dLat/len) * 0.0005;
                     startPt.lng = route[0].lng + (dLng/len) * 0.0005;
@@ -149,15 +205,24 @@
             const mins = Math.floor(totalSeconds / 60);
             const secs = totalSeconds % 60;
 
-            // 6. 輸出格式化
+            // 6. 輸出格式化 (純座標)
             let outputStr = `${startPt.lat.toFixed(6)}, ${startPt.lng.toFixed(6)}\n`;
             route.forEach(p => {
                 outputStr += `${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}\n`;
             });
-            outputStr += `${endPt.lat.toFixed(6)}, ${endPt.lng.toFixed(6)}\n`;
-            outputStr += `（共${flowerCount}朵花，要約${mins}分${secs}秒）`;
+            // 最後一行不加 \n，確保複製出來的資料最乾淨
+            outputStr += `${endPt.lat.toFixed(6)}, ${endPt.lng.toFixed(6)}`;
 
+            // 將純座標放入輸出框
             document.getElementById('outputArea').innerText = outputStr;
+            
+            // 獨立顯示總數與時間摘要
+            const summaryArea = document.getElementById('summaryArea');
+            summaryArea.innerText = `（共${flowerCount}朵花，要約${mins}分${secs}秒）`;
+            summaryArea.style.display = 'block';
+            
+            // 顯示複製按鈕
+            document.getElementById('copyBtn').style.display = 'block';
         }
     </script>
 </body>
