@@ -3,11 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <!-- PWA 與 iOS 主畫面設定 -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="皮克敏路線">
-    <title>巨大花朵路線最佳化</title>
+    <title>皮克敏路線最佳化 (圓交點幾何版)</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -17,7 +16,8 @@
             max-width: 600px;
             margin: auto;
         }
-        h2 { text-align: center; font-size: 1.5rem; }
+        h2 { text-align: center; font-size: 1.4rem; margin-bottom: 5px; }
+        .subtitle { text-align: center; font-size: 0.9rem; color: #666; margin-bottom: 20px; }
         textarea {
             width: 100%;
             height: 150px;
@@ -40,20 +40,10 @@
             cursor: pointer;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
-        .btn-primary {
-            background-color: #007aff;
-            color: white;
-        }
+        .btn-primary { background-color: #007aff; color: white; }
         .btn-primary:active { background-color: #005bb5; }
-        
-        .btn-secondary {
-            background-color: #e5e5ea;
-            color: #333;
-            padding: 10px;
-            font-size: 16px;
-        }
+        .btn-secondary { background-color: #e5e5ea; color: #333; padding: 10px; font-size: 16px; }
         .btn-secondary:active { background-color: #d1d1d6; }
-
         .output-box {
             background-color: #fff;
             padding: 15px;
@@ -67,9 +57,9 @@
         }
         .summary-text {
             text-align: center;
-            font-size: 16px;
+            font-size: 15px;
             font-weight: bold;
-            color: #d9534f; /* 使用紅色系讓重點醒目 */
+            color: #d9534f;
             margin-bottom: 15px;
         }
     </style>
@@ -77,36 +67,32 @@
 <body>
 
     <h2>巨大花朵路線規劃</h2>
+    <div class="subtitle">搭載幾何圓交點 Set Cover 最佳化</div>
     
     <button onclick="pasteCoords()" class="btn btn-secondary">📋 貼上座標</button>
     <textarea id="inputCoords" placeholder="請貼上花朵座標 (一行一個)"></textarea>
     
-    <button onclick="calculateRoute()" class="btn btn-primary">產生最佳路徑</button>
+    <button onclick="calculateRoute()" class="btn btn-primary">產生極限交集路徑</button>
     
     <div id="outputArea" class="output-box">結果將顯示於此...</div>
     
-    <!-- 新增的摘要顯示區塊 -->
     <div id="summaryArea" class="summary-text" style="display: none;"></div>
     
     <button id="copyBtn" onclick="copyResult()" class="btn btn-secondary" style="display: none;">📄 複製純座標結果</button>
 
     <script>
-        // 貼上剪貼簿內容的函數
         async function pasteCoords() {
             try {
                 const text = await navigator.clipboard.readText();
                 document.getElementById('inputCoords').value = text;
             } catch (err) {
-                alert('瀏覽器阻擋了剪貼簿讀取，請手動長按輸入框並選擇「貼上」。');
+                alert('請手動長按輸入框並選擇「貼上」。');
             }
         }
 
-        // 複製輸出結果的函數
         async function copyResult() {
             const outputText = document.getElementById('outputArea').innerText;
-            if (!outputText || outputText === "結果將顯示於此..." || outputText === "請輸入有效的座標！") {
-                return;
-            }
+            if (!outputText || outputText === "結果將顯示於此..." || outputText.includes("請輸入")) return;
             try {
                 await navigator.clipboard.writeText(outputText);
                 const copyBtn = document.getElementById('copyBtn');
@@ -114,29 +100,79 @@
                 copyBtn.innerText = '✅ 已複製！';
                 setTimeout(() => { copyBtn.innerText = originalText; }, 2000);
             } catch (err) {
-                alert('複製失敗，請手動長按文字全選複製。');
+                alert('複製失敗，請手動長按文字全選。');
             }
         }
 
-        // 計算兩點間距離 (Haversine formula，回傳公尺)
-        function getDistance(lat1, lon1, lat2, lon2) {
-            const R = 6371e3; 
-            const p1 = lat1 * Math.PI/180;
-            const p2 = lat2 * Math.PI/180;
-            const dp = (lat2-lat1) * Math.PI/180;
-            const dl = (lon2-lon1) * Math.PI/180;
+        // 經緯度轉平面公尺 (以第一點為原點的局部投影)
+        function toLocalXY(lat, lng, originLat, originLng) {
+            const R = 6371000;
+            const x = (lng - originLng) * (Math.PI / 180) * Math.cos(originLat * Math.PI / 180) * R;
+            const y = (lat - originLat) * (Math.PI / 180) * R;
+            return {x, y};
+        }
+
+        // 平面公尺轉經緯度
+        function toLatLng(x, y, originLat, originLng) {
+            const R = 6371000;
+            const lat = originLat + (y / R) * (180 / Math.PI);
+            const lng = originLng + (x / (R * Math.cos(originLat * Math.PI / 180))) * (180 / Math.PI);
+            return {lat, lng};
+        }
+
+        function getDistanceXY(p1, p2) {
+            return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+        }
+
+        function getDistanceLatLgn(lat1, lon1, lat2, lon2) {
+            const R = 6371000; 
+            const p1 = lat1 * Math.PI/180, p2 = lat2 * Math.PI/180;
+            const dp = (lat2-lat1) * Math.PI/180, dl = (lon2-lon1) * Math.PI/180;
             const a = Math.sin(dp/2) * Math.sin(dp/2) + Math.cos(p1) * Math.cos(p2) * Math.sin(dl/2) * Math.sin(dl/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            return R * c;
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+
+        // 計算兩個圓(半徑 40m)的交點
+        function getCircleIntersections(p1, p2, r = 40) {
+            let d = getDistanceXY(p1, p2);
+            if (d > 2 * r || d === 0) return []; // 沒交集或同一個點
+            
+            let a = d / 2;
+            let h = Math.sqrt(r * r - a * a);
+            let p3 = { x: p1.x + a * (p2.x - p1.x) / d, y: p1.y + a * (p2.y - p1.y) / d };
+            
+            return [
+                { x: p3.x + h * (p2.y - p1.y) / d, y: p3.y - h * (p2.x - p1.x) / d },
+                { x: p3.x - h * (p2.y - p1.y) / d, y: p3.y + h * (p2.x - p1.x) / d }
+            ];
+        }
+
+        // 2-Opt 演算法 (平面距離)
+        function optimizeRoute2Opt(route) {
+            let improved = true;
+            while (improved) {
+                improved = false;
+                for (let i = 1; i < route.length - 2; i++) {
+                    for (let j = i + 1; j < route.length - 1; j++) {
+                        let currentDist = getDistanceXY(route[i-1], route[i]) + getDistanceXY(route[j], route[j+1]);
+                        let newDist = getDistanceXY(route[i-1], route[j]) + getDistanceXY(route[i], route[j+1]);
+                        if (newDist < currentDist) {
+                            let reversed = route.slice(i, j + 1).reverse();
+                            route.splice(i, j - i + 1, ...reversed);
+                            improved = true;
+                        }
+                    }
+                }
+            }
+            return route;
         }
 
         function calculateRoute() {
             const input = document.getElementById('inputCoords').value;
             const lines = input.split('\n');
-            let coords = [];
+            let rawCoords = [];
             let uniqueCheck = new Set();
 
-            // 1. 解析座標並去除重複
             lines.forEach(line => {
                 const parts = line.split(',');
                 if(parts.length >= 2) {
@@ -146,82 +182,119 @@
                         const key = `${lat.toFixed(6)},${lng.toFixed(6)}`;
                         if(!uniqueCheck.has(key)) {
                             uniqueCheck.add(key);
-                            coords.push({lat, lng});
+                            rawCoords.push({lat, lng});
                         }
                     }
                 }
             });
 
-            if(coords.length === 0) {
+            if(rawCoords.length === 0) {
                 document.getElementById('outputArea').innerText = "請輸入有效的座標！";
-                document.getElementById('copyBtn').style.display = 'none';
-                document.getElementById('summaryArea').style.display = 'none';
                 return;
             }
 
-            const flowerCount = coords.length;
+            const flowerCount = rawCoords.length;
+            const originLat = rawCoords[0].lat;
+            const originLng = rawCoords[0].lng;
+            
+            // 轉成平面座標計算，精確度更高且速度更快
+            let flowers = rawCoords.map((p, index) => {
+                let xy = toLocalXY(p.lat, p.lng, originLat, originLng);
+                return { id: index, x: xy.x, y: xy.y };
+            });
 
-            // 2. 簡單的最短路徑排序 (Nearest Neighbor)
-            let route = [];
-            let current = coords[0];
-            route.push(current);
-            let unvisited = coords.slice(1);
-            let totalDistanceMeters = 0;
+            // 1. 產生所有候選踩點 (花朵正中心 + 所有互相交疊的圓的交點)
+            let candidates = [...flowers];
+            for (let i = 0; i < flowers.length; i++) {
+                for (let j = i + 1; j < flowers.length; j++) {
+                    let intersects = getCircleIntersections(flowers[i], flowers[j], 40);
+                    candidates.push(...intersects);
+                }
+            }
 
+            // 2. 針對每個候選踩點，計算能吃到哪些花 (容錯 40.5m)
+            candidates.forEach(c => {
+                c.covered = flowers.filter(f => getDistanceXY(c, f) <= 40.5).map(f => f.id);
+            });
+
+            // 3. 貪婪集合覆蓋 (Greedy Set Cover)：每次挑選能覆蓋最多未處理花朵的踩點
+            let uncoveredFlowers = new Set(flowers.map(f => f.id));
+            let selectedStops = [];
+
+            while (uncoveredFlowers.size > 0) {
+                let bestCandidate = null;
+                let maxCovered = 0;
+
+                candidates.forEach(c => {
+                    let newlyCovered = c.covered.filter(id => uncoveredFlowers.has(id)).length;
+                    if (newlyCovered > maxCovered) {
+                        maxCovered = newlyCovered;
+                        bestCandidate = c;
+                    }
+                });
+
+                selectedStops.push(bestCandidate);
+                bestCandidate.covered.forEach(id => uncoveredFlowers.delete(id));
+            }
+
+            // 4. 對選出的最佳踩點進行 TSP 最短路徑排序
+            let route = [selectedStops[0]];
+            let unvisited = selectedStops.slice(1);
+            
             while(unvisited.length > 0) {
-                let nearestIdx = 0;
-                let minDist = Infinity;
+                let nearestIdx = 0, minDist = Infinity;
                 for(let i = 0; i < unvisited.length; i++) {
-                    let d = getDistance(current.lat, current.lng, unvisited[i].lat, unvisited[i].lng);
+                    let d = getDistanceXY(route[route.length-1], unvisited[i]);
                     if(d < minDist) { minDist = d; nearestIdx = i; }
                 }
-                totalDistanceMeters += minDist;
-                current = unvisited[nearestIdx];
-                route.push(current);
+                route.push(unvisited[nearestIdx]);
                 unvisited.splice(nearestIdx, 1);
             }
+            route = optimizeRoute2Opt(route); // 解開交叉
 
-            // 3. 計算最後位置 (幾何中心)
+            // 5. 轉換回經緯度並計算時間
+            let finalLatLngs = route.map(p => toLatLng(p.x, p.y, originLat, originLng));
+            
+            let totalDistanceMeters = 0;
+            for(let i=0; i<finalLatLngs.length-1; i++){
+                totalDistanceMeters += getDistanceLatLgn(finalLatLngs[i].lat, finalLatLngs[i].lng, finalLatLngs[i+1].lat, finalLatLngs[i+1].lng);
+            }
+
+            // 幾何中心
             let sumLat = 0, sumLng = 0;
-            route.forEach(p => { sumLat += p.lat; sumLng += p.lng; });
+            rawCoords.forEach(p => { sumLat += p.lat; sumLng += p.lng; });
             const endPt = { lat: sumLat / flowerCount, lng: sumLng / flowerCount };
-            totalDistanceMeters += getDistance(route[route.length-1].lat, route[route.length-1].lng, endPt.lat, endPt.lng);
+            totalDistanceMeters += getDistanceLatLgn(finalLatLngs[finalLatLngs.length-1].lat, finalLatLngs[finalLatLngs.length-1].lng, endPt.lat, endPt.lng);
 
-            // 4. 計算起始位置
-            let startPt = { lat: route[0].lat, lng: route[0].lng };
-            if(route.length > 1) {
-                const dLat = route[0].lat - route[1].lat;
-                const dLng = route[0].lng - route[1].lng;
+            // 起點 (向外推 55.5m)
+            let startPt = { lat: finalLatLngs[0].lat, lng: finalLatLngs[0].lng };
+            if(finalLatLngs.length > 1) {
+                const dLat = finalLatLngs[0].lat - finalLatLngs[1].lat;
+                const dLng = finalLatLngs[0].lng - finalLatLngs[1].lng;
                 const len = Math.sqrt(dLat*dLat + dLng*dLng);
                 if(len > 0) {
-                    startPt.lat = route[0].lat + (dLat/len) * 0.0005;
-                    startPt.lng = route[0].lng + (dLng/len) * 0.0005;
+                    startPt.lat = finalLatLngs[0].lat + (dLat/len) * 0.0005;
+                    startPt.lng = finalLatLngs[0].lng + (dLng/len) * 0.0005;
                 }
             }
-            totalDistanceMeters += 55.5; 
+            totalDistanceMeters += 55.5;
 
-            // 5. 計算時間 (時速 20km/h = 5.55 m/s)
+            // 時間計算
             const totalSeconds = Math.round(totalDistanceMeters / 5.55);
             const mins = Math.floor(totalSeconds / 60);
             const secs = totalSeconds % 60;
 
-            // 6. 輸出格式化 (純座標)
+            // 輸出
             let outputStr = `${startPt.lat.toFixed(6)}, ${startPt.lng.toFixed(6)}\n`;
-            route.forEach(p => {
+            finalLatLngs.forEach(p => {
                 outputStr += `${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}\n`;
             });
-            // 最後一行不加 \n，確保複製出來的資料最乾淨
             outputStr += `${endPt.lat.toFixed(6)}, ${endPt.lng.toFixed(6)}`;
 
-            // 將純座標放入輸出框
             document.getElementById('outputArea').innerText = outputStr;
             
-            // 獨立顯示總數與時間摘要
-            const summaryArea = document.getElementById('summaryArea');
-            summaryArea.innerText = `（共${flowerCount}朵花，要約${mins}分${secs}秒）`;
-            summaryArea.style.display = 'block';
-            
-            // 顯示複製按鈕
+            document.getElementById('summaryArea').innerText = `（原始 ${flowerCount} 朵花完美濃縮為 ${finalLatLngs.length} 個極限踩點，約需${mins}分${secs}秒）`;
+            document.getElementById('summaryArea').style.display = 'block';
             document.getElementById('copyBtn').style.display = 'block';
         }
     </script>
