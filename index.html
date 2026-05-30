@@ -12,7 +12,6 @@
         body {
             font-family: 'Nunito', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             padding: 15px;
-            /* 柔和的草地與天空漸層背景 */
             background: linear-gradient(135deg, #e0f7fa 0%, #c8e6c9 100%);
             color: #2d3436;
             margin: 0;
@@ -34,7 +33,7 @@
             font-size: 1.5rem; 
             margin-top: 0;
             margin-bottom: 8px; 
-            color: #2e7d32; /* 森林綠 */
+            color: #2e7d32; 
             text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
         }
         .subtitle { 
@@ -43,7 +42,7 @@
             color: #555; 
             margin-bottom: 20px;
             font-weight: bold;
-            background-color: #fff9c4; /* 淡黃色底襯托簽名 */
+            background-color: #fff9c4; 
             padding: 5px 10px;
             border-radius: 15px;
             display: inline-block;
@@ -71,10 +70,10 @@
         }
         .btn {
             width: 100%;
-            padding: 14px;
+            padding: 12px 8px;
             border: none;
             border-radius: 12px;
-            font-size: 17px;
+            font-size: 16px;
             font-weight: bold;
             margin: 6px 0;
             cursor: pointer;
@@ -82,16 +81,18 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 8px;
+            gap: 5px;
         }
         .btn:active { transform: scale(0.98); }
         
-        /* 按鈕顏色配置 (皮克敏風格) */
+        /* 按鈕顏色配置 */
         .btn-primary { 
             background-color: #ff5252; /* 紅皮克敏 */
             color: white; 
             box-shadow: 0 4px 0 #d32f2f;
             margin-bottom: 20px;
+            font-size: 17px;
+            padding: 14px;
         }
         .btn-primary:active { box-shadow: 0 0 0 #d32f2f; transform: translateY(4px); }
 
@@ -102,20 +103,48 @@
         }
         .btn-paste:active { box-shadow: 0 0 0 #2962ff; transform: translateY(4px); }
 
+        .btn-gpx { 
+            background-color: #8e24aa; /* 紫皮克敏 */
+            color: white; 
+            box-shadow: 0 4px 0 #6a1b9a;
+        }
+        .btn-gpx:active { box-shadow: 0 0 0 #6a1b9a; transform: translateY(4px); }
+
+        .btn-url { 
+            background-color: #00bcd4; /* 冰皮克敏 */
+            color: white; 
+            box-shadow: 0 4px 0 #0097a7;
+        }
+        .btn-url:active { box-shadow: 0 0 0 #0097a7; transform: translateY(4px); }
+
         .btn-clear { 
             background-color: #ffca28; /* 黃皮克敏 */
             color: #424242; 
             box-shadow: 0 4px 0 #f57f17;
             margin-bottom: 15px;
+            font-size: 17px;
+            padding: 14px;
         }
         .btn-clear:active { box-shadow: 0 0 0 #f57f17; transform: translateY(4px); }
         
         .btn-copy { 
-            background-color: #66bb6a; /* 綠色完成感 */
+            background-color: #66bb6a; /* 綠色 */
             color: white; 
             box-shadow: 0 4px 0 #388e3c;
+            font-size: 17px;
+            padding: 14px;
         }
         .btn-copy:active { box-shadow: 0 0 0 #388e3c; transform: translateY(4px); }
+
+        .btn-group-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+        .btn-group-row .btn {
+            margin: 0;
+            flex: 1;
+        }
 
         .output-box {
             background-color: #f1f8e9;
@@ -155,13 +184,19 @@
 
     <div class="container">
         <h2>🌸 皮克敏花田採果最優路線規劃 🌸</h2>
-        <!-- 將副標題更正為您指定的設計者名稱與最新的建立時間 -->
-        <div class="subtitle">浩文_hsen設計 ☆☆ 目前版本：2026_05_24_20:08 ☆☆</div>
+        <div class="subtitle">浩文_hsen設計 ☆☆ 目前版本：2026_05_30_12:24 ☆☆</div>
         
         <button onclick="clearData()" class="btn btn-clear">🔄 新資料重新輸入</button>
-        <button onclick="pasteCoords()" class="btn btn-paste">📋 貼上座標</button>
         
-        <textarea id="inputCoords" placeholder="請貼上花朵座標 🌱&#10;(一行一個，系統會自動剔除括號與重複座標)"></textarea>
+        <input type="file" id="gpxInput" accept=".gpx,.xml,.txt" style="display: none;">
+        
+        <div class="btn-group-row">
+            <button onclick="document.getElementById('gpxInput').click()" class="btn btn-gpx">📂 檔案</button>
+            <button onclick="importFromURL()" class="btn btn-url">🔗 網址</button>
+            <button onclick="pasteCoords()" class="btn btn-paste">📋 貼上</button>
+        </div>
+        
+        <textarea id="inputCoords" placeholder="請提供來源或貼上座標 🌱&#10;(系統會自動提取、剔除括號與重複座標)"></textarea>
         
         <button onclick="calculateRoute()" class="btn btn-primary">🚀 產生極限交集路徑</button>
         
@@ -173,7 +208,76 @@
     </div>
 
     <script>
-        // 清除所有資料的函數
+        // 共用的 GPX/XML 字串解析模組
+        function processGPXString(xmlStr, sourceName) {
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(xmlStr, "text/xml");
+
+            // 提取 GPX 內的所有軌跡點、航點與路線點
+            const points = xmlDoc.querySelectorAll('trkpt, wpt, rtept');
+            let coordsArr = [];
+            points.forEach(pt => {
+                const lat = pt.getAttribute('lat');
+                const lon = pt.getAttribute('lon');
+                if (lat && lon) {
+                    coordsArr.push(`${lat}, ${lon}`);
+                }
+            });
+
+            if (coordsArr.length > 0) {
+                document.getElementById('inputCoords').value = coordsArr.join('\n');
+                
+                // 在日誌中加上特別提示
+                document.getElementById('logArea').innerText = `🌐 成功從 ${sourceName} 解析，載入 ${coordsArr.length} 個座標點！\n`;
+                document.getElementById('logArea').style.display = 'block';
+                
+                // 自動觸發計算
+                calculateRoute();
+            } else {
+                alert(`⚠️ 無法在 ${sourceName} 中找到有效的 GPX 座標資訊！\n請確定網址或檔案是原始資料 (Raw Data) 而不是網頁預覽。`);
+                document.getElementById('logArea').innerText = "";
+                document.getElementById('logArea').style.display = 'none';
+            }
+        }
+
+        // 監聽本機 GPX 檔案上傳
+        document.getElementById('gpxInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                processGPXString(evt.target.result, "上傳檔案");
+            };
+            reader.readAsText(file);
+            e.target.value = ''; // 清空以允許重複上傳同檔案
+        });
+
+        // 網址匯入功能 (使用公共 CORS Proxy 繞過瀏覽器限制)
+        async function importFromURL() {
+            const targetUrl = prompt("請貼上 GPX 檔案的下載網址：\n(必須是直接指向檔案內容的連結，不能是網頁預覽畫面)");
+            if (!targetUrl || targetUrl.trim() === "") return;
+
+            document.getElementById('logArea').innerText = "⏳ 正在從網址抓取資料，請稍候...";
+            document.getElementById('logArea').style.display = 'block';
+
+            try {
+                // 使用 allorigins 作為 CORS 代理，確保能跨網域讀取純文字檔案
+                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl.trim())}`;
+                const response = await fetch(proxyUrl);
+                
+                if (!response.ok) throw new Error("網路連線或網址有誤");
+                
+                const xmlText = await response.text();
+                processGPXString(xmlText, "網址連結");
+
+            } catch (error) {
+                document.getElementById('logArea').style.display = 'none';
+                alert("❌ 網址讀取失敗！\n可能原因：\n1. 網址無效或檔案不存在\n2. 該網址是需要登入的雲端硬碟(如Google Drive)\n3. 該網址是一般網頁，而非原始文字檔(Raw Data)。");
+            }
+        }
+
+        // 清除所有資料
         function clearData() {
             document.getElementById('inputCoords').value = '';
             document.getElementById('outputArea').innerText = '🌱 結果將顯示於此...';
@@ -207,7 +311,6 @@
             }
         }
 
-        // 經緯度轉平面公尺
         function toLocalXY(lat, lng, originLat, originLng) {
             const R = 6371000;
             const x = (lng - originLng) * (Math.PI / 180) * Math.cos(originLat * Math.PI / 180) * R;
@@ -215,7 +318,6 @@
             return {x, y};
         }
 
-        // 平面公尺轉經緯度
         function toLatLng(x, y, originLat, originLng) {
             const R = 6371000;
             const lat = originLat + (y / R) * (180 / Math.PI);
@@ -235,7 +337,6 @@
             return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         }
 
-        // 計算兩個圓(半徑 40m)的交點
         function getCircleIntersections(p1, p2, r = 40) {
             let d = getDistanceXY(p1, p2);
             if (d > 2 * r || d === 0) return []; 
@@ -250,7 +351,6 @@
             ];
         }
 
-        // 2-Opt 演算法
         function optimizeRoute2Opt(route) {
             let improved = true;
             while (improved) {
@@ -272,8 +372,6 @@
 
         function calculateRoute() {
             let rawInput = document.getElementById('inputCoords').value;
-            
-            // 處理除錯：清除括號與無關符號
             let cleanedInput = rawInput.replace(/[()\[\]<>]/g, '');
             let hasBrackets = rawInput !== cleanedInput;
             
@@ -299,11 +397,15 @@
                 }
             });
 
-            // 顯示系統處理訊息
-            let logMsg = "";
+            let logMsg = document.getElementById('logArea').innerText; 
+            // 避免重複堆疊提示文字
+            if (logMsg.includes("✨ 已自動清除")) logMsg = logMsg.split("✨ 已自動清除")[0]; 
+            if (logMsg.includes("✨ 偵測到重複")) logMsg = logMsg.split("✨ 偵測到重複")[0]; 
+
             if (hasBrackets) logMsg += "✨ 已自動清除括號與特殊符號\n";
             if (duplicateCount > 0) logMsg += `✨ 偵測到重複座標，已自動剔除 ${duplicateCount} 筆\n`;
-            if (logMsg) {
+            
+            if (logMsg.trim()) {
                 document.getElementById('logArea').innerText = logMsg.trim();
                 document.getElementById('logArea').style.display = 'block';
             } else {
@@ -311,7 +413,7 @@
             }
 
             if(rawCoords.length === 0) {
-                document.getElementById('outputArea').innerText = "⚠️ 請輸入有效的座標！";
+                document.getElementById('outputArea').innerText = "⚠️ 請輸入有效的座標或來源！";
                 return;
             }
 
@@ -324,7 +426,6 @@
                 return { id: index, x: xy.x, y: xy.y };
             });
 
-            // 1. 產生候選踩點
             let candidates = [...flowers];
             for (let i = 0; i < flowers.length; i++) {
                 for (let j = i + 1; j < flowers.length; j++) {
@@ -333,12 +434,10 @@
                 }
             }
 
-            // 2. 判定覆蓋
             candidates.forEach(c => {
                 c.covered = flowers.filter(f => getDistanceXY(c, f) <= 40.5).map(f => f.id);
             });
 
-            // 3. 貪婪集合覆蓋
             let uncoveredFlowers = new Set(flowers.map(f => f.id));
             let selectedStops = [];
             while (uncoveredFlowers.size > 0) {
@@ -355,7 +454,6 @@
                 bestCandidate.covered.forEach(id => uncoveredFlowers.delete(id));
             }
 
-            // 4. 全局最佳起點計算
             let centerXY = {x: 0, y: 0};
             flowers.forEach(f => { centerXY.x += f.x; centerXY.y += f.y; });
             centerXY.x /= flowerCount;
@@ -394,10 +492,8 @@
                 }
             }
 
-            // 5. 轉換最佳路徑
             let finalLatLngs = absoluteBestRoute.map(p => toLatLng(p.x, p.y, originLat, originLng));
             
-            // 計算暖身起點 (111.11公尺)
             let p0 = absoluteBestRoute[0];
             let startXY = { x: p0.x, y: p0.y };
             
@@ -416,7 +512,6 @@
             let startPtLatLng = toLatLng(startXY.x, startXY.y, originLat, originLng);
             const endPtLatLng = toLatLng(centerXY.x, centerXY.y, originLat, originLng);
 
-            // 6. 計算時間 (時速20km/h)
             let totalDistanceMeters = 111.11; 
             for(let i=0; i<finalLatLngs.length-1; i++){
                 totalDistanceMeters += getDistanceLatLgn(finalLatLngs[i].lat, finalLatLngs[i].lng, finalLatLngs[i+1].lat, finalLatLngs[i+1].lng);
@@ -427,7 +522,6 @@
             const mins = Math.floor(totalSeconds / 60);
             const secs = totalSeconds % 60;
 
-            // 7. 輸出純座標
             let outputStr = `${startPtLatLng.lat.toFixed(6)}, ${startPtLatLng.lng.toFixed(6)}\n`;
             finalLatLngs.forEach(p => {
                 outputStr += `${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}\n`;
